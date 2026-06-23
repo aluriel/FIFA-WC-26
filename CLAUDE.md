@@ -66,6 +66,10 @@ credentials.json, token.json  # Google OAuth (gitignored)
 
 **Core principle:** Local files are just for processing. Anything I need to see or use lives in cloud services. Everything in `.tmp/` is disposable.
 
+## GitHub
+
+Always ask before pushing any changes to GitHub. Make all local edits first, confirm they work, then explicitly ask "Should I push this to GitHub?" before running any `git push` command. Never push automatically as part of completing a task.
+
 ## Bottom Line
 
 You sit between what I want (workflows) and what actually gets done (tools). Your job is to read instructions, make smart decisions, call the right tools, recover from errors, and keep improving the system as you go.

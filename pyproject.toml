@@ -1,0 +1,2 @@
+[tool.vercel]
+entrypoint = "tools/serve_scores.py:app"

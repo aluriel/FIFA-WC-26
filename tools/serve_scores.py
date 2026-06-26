@@ -609,7 +609,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <button class="filter-btn" onclick="filterMatches('Round of 16', this)">Son 16</button>
   <button class="filter-btn" onclick="filterMatches('Quarterfinals', this)">Çeyrek Final</button>
   <button class="filter-btn" onclick="filterMatches('Semifinals', this)">Yarı Final</button>
-  <button class="filter-btn" onclick="filterMatches('3rd Place Match', this)">3.lük Maçı</button>
+  <button class="filter-btn" onclick="filterMatches('3rd-Place Match', this)">3.lük Maçı</button>
   <button class="filter-btn" onclick="filterMatches('Final', this)">Final</button>
   <div class="filter-divider"></div>
   <button class="filter-btn standings-btn" onclick="showStandings(this)">&#128202; Puan Durumu</button>

@@ -605,6 +605,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <button class="filter-btn live-btn" onclick="filterMatches('live', this)">🔴 Canlı</button>
   <button class="filter-btn" onclick="filterMatches('today', this)">Bugün</button>
   __GROUP_BUTTONS__
+  <button class="filter-btn" onclick="filterMatches('Round of 32', this)">Son 32</button>
+  <button class="filter-btn" onclick="filterMatches('Round of 16', this)">Son 16</button>
+  <button class="filter-btn" onclick="filterMatches('Quarterfinals', this)">Çeyrek Final</button>
+  <button class="filter-btn" onclick="filterMatches('Semifinals', this)">Yarı Final</button>
+  <button class="filter-btn" onclick="filterMatches('3rd Place Match', this)">3.lük Maçı</button>
+  <button class="filter-btn" onclick="filterMatches('Final', this)">Final</button>
   <div class="filter-divider"></div>
   <button class="filter-btn standings-btn" onclick="showStandings(this)">&#128202; Puan Durumu</button>
   <button class="filter-btn squads-btn" onclick="showSquads(this)">&#128101; Kadrolar</button>
@@ -1022,7 +1028,7 @@ def build_html(matches: list[dict], groups: list[dict]) -> str:
     today_str = now_trt.strftime("%Y-%m-%d")
     updated_str = now_trt.strftime("%H:%M TRT")
 
-    unique_groups = sorted({m["group"] for m in matches if m["group"]})
+    unique_groups = sorted({m["group"] for m in matches if m["group"] and m["group"].startswith("Group ")})
     group_buttons = "\n  ".join(
         f'<button class="filter-btn" onclick="filterMatches(\'{g}\', this)">{g}</button>'
         for g in unique_groups

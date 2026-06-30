@@ -28,6 +28,7 @@ STATUS_MAP = {
     "STATUS_HALFTIME":    "Devre Arası",
     "STATUS_FULL_TIME":   "Bitti",
     "STATUS_FINAL":       "Bitti",
+    "STATUS_FINAL_PEN":   "Bitti (Pen.)",
     "STATUS_END_PERIOD":  "Bitti",
 }
 
@@ -55,6 +56,10 @@ def _parse_event(event: dict) -> dict:
 
     home_score = int(home.get("score", 0)) if state != "pre" else None
     away_score = int(away.get("score", 0)) if state != "pre" else None
+
+    # Penalty shootout scores (knockout matches decided on penalties only)
+    home_pens = home.get("shootoutScore")
+    away_pens = away.get("shootoutScore")
 
     utc_str = comp.get("date", "")
     utc_dt = datetime.fromisoformat(utc_str.replace("Z", "+00:00"))
@@ -87,7 +92,10 @@ def _parse_event(event: dict) -> dict:
         "away_flag":   away_team.get("logo", ""),
         "home_score":  home_score,
         "away_score":  away_score,
+        "home_pens":   home_pens,
+        "away_pens":   away_pens,
         "home_winner": home.get("winner", False),
+        "away_winner": away.get("winner", False),
         "date_trt":    trt_dt.strftime("%Y-%m-%d"),
         "time_trt":    trt_dt.strftime("%H:%M"),
         "date_label":  trt_dt.strftime("%d %b"),
@@ -409,6 +417,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
   .score-display.pending { color: #4b5563; font-size: 1rem; letter-spacing: 0; }
   .live .score-display { background: #78350f; color: #fbbf24; }
+  .pen-score { display: block; margin-top: 4px; font-size: 0.72rem; font-weight: 700;
+    color: #fbbf24; letter-spacing: 0.04em; }
   .match-status { text-align: center; }
   .status-badge {
     display: inline-block; font-size: 0.7rem; font-weight: 700;
@@ -954,16 +964,21 @@ def _badge(state: str, status: str, live_clock: str, fifa_url: str = "") -> str:
 def _score_html(m: dict) -> str:
     if m["home_score"] is None:
         return '<div class="score-box"><span class="score-display pending">&#8211;&nbsp;vs&nbsp;&#8211;</span></div>'
-    return f'<div class="score-box"><span class="score-display">{m["home_score"]} &#8211; {m["away_score"]}</span></div>'
+    pen_html = ""
+    if m.get("home_pens") is not None and m.get("away_pens") is not None:
+        pen_html = f'<span class="pen-score">Pen. {m["home_pens"]} &#8211; {m["away_pens"]}</span>'
+    return (
+        f'<div class="score-box">'
+        f'<span class="score-display">{m["home_score"]} &#8211; {m["away_score"]}</span>'
+        f'{pen_html}</div>'
+    )
 
 
 def _team_html(m: dict, side: str) -> str:
     name = m[f"{side}_team"]
     abbr = m[f"{side}_abbr"]
     flag = m.get(f"{side}_flag", "")
-    is_winner = m["home_winner"] if side == "home" else (
-        m["state"] == "post" and not m["home_winner"] and m["home_score"] != m["away_score"]
-    )
+    is_winner = m["home_winner"] if side == "home" else m.get("away_winner", False)
     flag_html = (
         f'<img class="team-flag" src="{flag}" alt="{abbr}">' if flag
         else '<div class="team-flag-placeholder"></div>'

@@ -164,6 +164,24 @@ def get_matches() -> list[dict]:
 # Standings data
 # ---------------------------------------------------------------------------
 
+def _annotate_qualify_status(groups: list[dict], matches: list[dict]) -> list[dict]:
+    """Set qualify_status on each entry from actual knockout-round match data."""
+    knockout_abbrs: set[str] = set()
+    for m in matches:
+        if not m["group"].startswith("Group "):
+            knockout_abbrs.add(m["home_abbr"])
+            knockout_abbrs.add(m["away_abbr"])
+    for group in groups:
+        for e in group["entries"]:
+            if e["abbr"] in knockout_abbrs:
+                e["qualify_status"] = "qualified"
+            elif int(e["gp"]) >= 3:
+                e["qualify_status"] = "eliminated"
+            else:
+                e["qualify_status"] = ""
+    return groups
+
+
 def _compute_standings_refresh(matches: list[dict]) -> datetime:
     now = datetime.now(timezone.utc)
     refresh_points = []
@@ -212,9 +230,9 @@ def get_standings(matches: list[dict]) -> list[dict]:
                 "ga":         stats.get("pointsAgainst", "0"),
                 "gd":         stats.get("pointDifferential", "0"),
                 "pts":        stats.get("points", "0"),
-                "qualifies":  bool(note.get("description", "")),
-                "note_color": note.get("color", ""),
-                "note_desc":  note.get("description", ""),
+                "qualify_status": "",
+                "note_color":    note.get("color", ""),
+                "note_desc":     note.get("description", ""),
             })
         entries.sort(key=lambda e: e["rank"])
         groups.append({"name": group["name"], "entries": entries})
@@ -319,262 +337,372 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         background: #0a0e1a; color: #e8eaf6; min-height: 100vh; }
+         background: #fafaf9; color: #1c1917; min-height: 100vh; }
 
   /* Header */
   .header {
-    background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #1565c0 100%);
+    background: #1c1917;
     padding: 20px 24px 16px;
     display: flex; align-items: center; justify-content: space-between;
     flex-wrap: wrap; gap: 12px;
-    border-bottom: 3px solid #ffd700;
+    border-bottom: 3px solid #0d9488;
   }
   .header-title { display: flex; align-items: center; gap: 14px; }
   .header-title h1 { font-size: 1.5rem; font-weight: 700; color: #fff; }
-  .header-title .year { color: #ffd700; }
+  .header-title .year { color: #0d9488; }
   .trophy { font-size: 2rem; }
-  .meta { font-size: 0.8rem; color: #90caf9; }
-  .meta strong { color: #fff; }
+  .meta { font-size: 0.8rem; color: #a8a29e; }
+  .meta strong { color: #e7e5e4; }
   .refresh-btn {
-    background: #ffd700; color: #000; border: none; padding: 8px 18px;
+    background: #0d9488; color: #fff; border: none; padding: 8px 18px;
     border-radius: 20px; font-weight: 700; cursor: pointer; font-size: 0.85rem;
     transition: transform 0.1s, background 0.2s;
   }
-  .refresh-btn:hover { background: #ffec6e; transform: scale(1.04); }
+  .refresh-btn:hover { background: #0f766e; transform: scale(1.04); }
 
   /* Filter bar */
   .filter-bar {
-    background: #111827; padding: 12px 24px;
+    background: #f5f5f4; padding: 12px 24px;
     display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-    border-bottom: 1px solid #1f2937;
+    border-bottom: 1px solid #e7e5e4;
     position: sticky; top: 0; z-index: 10;
   }
-  .filter-label { font-size: 0.75rem; color: #6b7280; text-transform: uppercase;
+  .filter-label { font-size: 0.75rem; color: #78716c; text-transform: uppercase;
                   letter-spacing: 0.05em; margin-right: 4px; }
   .filter-btn {
-    background: #1f2937; color: #9ca3af; border: 1px solid #374151;
+    background: #fff; color: #57534e; border: 1px solid #d6d3d1;
     padding: 5px 12px; border-radius: 16px; cursor: pointer; font-size: 0.8rem;
     transition: all 0.15s;
   }
-  .filter-btn:hover { background: #374151; color: #e5e7eb; }
-  .filter-btn.active { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+  .filter-btn:hover { background: #e7e5e4; color: #1c1917; }
+  .filter-btn.active { background: #1c1917; color: #fff; border-color: #1c1917; }
   .filter-btn.live-btn.active { background: #dc2626; border-color: #dc2626; }
-  .filter-btn.standings-btn.active { background: #7c3aed; border-color: #7c3aed; }
-  .filter-btn.squads-btn.active { background: #0f766e; border-color: #0f766e; }
-  .filter-divider { width: 1px; height: 22px; background: #374151; margin: 0 4px; flex-shrink: 0; }
+  .filter-btn.standings-btn.active { background: #0d9488; border-color: #0d9488; }
+  .filter-btn.squads-btn.active { background: #0d9488; border-color: #0d9488; }
+  .filter-divider { width: 1px; height: 22px; background: #d6d3d1; margin: 0 4px; flex-shrink: 0; }
   .search-wrapper { position: relative; margin-left: auto; }
   .search-input {
-    background: #1f2937; color: #e5e7eb; border: 1px solid #374151;
+    background: #fff; color: #1c1917; border: 1px solid #d6d3d1;
     padding: 6px 14px 6px 34px; border-radius: 20px; font-size: 0.85rem;
     outline: none; width: 200px; transition: border-color 0.2s, width 0.2s;
   }
-  .search-input:focus { border-color: #3b82f6; width: 260px; }
-  .search-input::placeholder { color: #6b7280; }
+  .search-input:focus { border-color: #0d9488; width: 260px; }
+  .search-input::placeholder { color: #a8a29e; }
   .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
-                 color: #6b7280; font-size: 0.85rem; pointer-events: none; }
+                 color: #a8a29e; font-size: 0.85rem; pointer-events: none; }
 
   /* Match cards */
   .content { padding: 0 16px 40px; max-width: 1100px; margin: 0 auto; }
   .day-section { margin-top: 24px; }
   .day-header {
-    padding: 10px 16px; background: #111827;
-    border-left: 4px solid #ffd700; border-radius: 4px;
-    font-size: 0.9rem; font-weight: 600; color: #ffd700;
+    padding: 10px 16px; background: #f5f5f4;
+    border-left: 4px solid #0d9488; border-radius: 4px;
+    font-size: 0.9rem; font-weight: 600; color: #57534e;
     margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em;
   }
   .match-card {
-    background: #111827; border-radius: 10px; margin-bottom: 6px;
-    border: 1px solid #1f2937; overflow: hidden; transition: border-color 0.2s;
+    background: #fffbeb; border-radius: 10px; margin-bottom: 6px;
+    border: 1px solid #e7e5e4; overflow: hidden; transition: border-color 0.2s;
   }
-  .match-card:hover { border-color: #374151; }
-  .match-card.live { border-color: #fbbf24; background: #1c1a0a; }
-  .match-card.finished { opacity: 0.88; }
+  .match-card:hover { border-color: #d6d3d1; background: #fef3c7; }
+  .match-card.live { border-color: #0d9488; background: #f0fdfa; }
+  .match-card.finished { opacity: 0.92; }
   .match-inner {
     display: grid;
     grid-template-columns: 80px 1fr auto 1fr 110px;
     align-items: center; padding: 12px 16px; gap: 8px;
   }
   .match-time { text-align: center; }
-  .match-time .time { font-size: 1.1rem; font-weight: 700; color: #fff; }
-  .match-time .trt-label { font-size: 0.65rem; color: #6b7280; }
+  .match-time .time { font-size: 1.1rem; font-weight: 700; color: #1c1917; }
+  .match-time .trt-label { font-size: 0.65rem; color: #78716c; }
   .match-time .group-tag {
-    font-size: 0.68rem; color: #60a5fa; background: #1e3a5f;
+    font-size: 0.68rem; color: #57534e; background: #e7e5e4;
     padding: 2px 6px; border-radius: 10px; margin-top: 3px; display: inline-block;
   }
   .team { display: flex; align-items: center; gap: 8px; }
   .team.home { justify-content: flex-end; text-align: right; }
   .team.away { justify-content: flex-start; text-align: left; }
-  .team-name { font-size: 0.95rem; font-weight: 600; color: #e5e7eb; }
-  .team-abbr { font-size: 0.75rem; color: #9ca3af; display: none; }
+  .team-name { font-size: 0.95rem; font-weight: 600; color: #1c1917; }
+  .team-abbr { font-size: 0.75rem; color: #78716c; display: none; }
   .team-flag { width: 28px; height: 20px; object-fit: cover; border-radius: 2px; flex-shrink: 0; }
-  .team-flag-placeholder { width: 28px; height: 20px; background: #374151; border-radius: 2px; flex-shrink: 0; }
-  .winner .team-name { color: #fff; }
+  .team-flag-placeholder { width: 28px; height: 20px; background: #d6d3d1; border-radius: 2px; flex-shrink: 0; }
+  .winner .team-name { color: #0c0a09; font-weight: 800; }
+  .qual-arrow { font-size: 1.3rem; font-weight: 900; line-height: 1; flex-shrink: 0; }
+  .qual-arrow.up { color: #16a34a; }
+  .qual-arrow.down { color: #dc2626; }
   .score-box { text-align: center; flex-shrink: 0; min-width: 80px; }
   .score-display {
-    font-size: 1.5rem; font-weight: 800; color: #fff;
-    background: #1f2937; border-radius: 8px;
+    font-size: 1.5rem; font-weight: 800; color: #0d9488;
+    background: #f5f5f4; border-radius: 8px;
     padding: 4px 14px; letter-spacing: 2px; display: inline-block;
   }
-  .score-display.pending { color: #4b5563; font-size: 1rem; letter-spacing: 0; }
-  .live .score-display { background: #78350f; color: #fbbf24; }
+  .score-display.pending { color: #a8a29e; font-size: 1rem; letter-spacing: 0; }
+  .live .score-display { background: #ccfbf1; color: #0f766e; }
   .pen-score { display: block; margin-top: 4px; font-size: 0.72rem; font-weight: 700;
-    color: #fbbf24; letter-spacing: 0.04em; }
+    color: #0d9488; letter-spacing: 0.04em; }
   .match-status { text-align: center; }
   .status-badge {
     display: inline-block; font-size: 0.7rem; font-weight: 700;
     padding: 3px 10px; border-radius: 12px; text-transform: uppercase; letter-spacing: 0.05em;
   }
-  .badge-scheduled { background: #1f2937; color: #6b7280; }
+  .badge-scheduled { background: #f5f5f4; color: #78716c; }
   .badge-live { background: #dc2626; color: #fff; animation: pulse 1.5s infinite; }
-  .badge-halftime { background: #92400e; color: #fcd34d; }
-  .badge-finished { background: #14532d; color: #86efac; }
-  .live-clock { font-size: 0.8rem; color: #fbbf24; margin-top: 3px; font-weight: 700; }
-  .venue-text { font-size: 0.68rem; color: #4b5563; margin-top: 2px; }
+  .badge-halftime { background: #fef3c7; color: #92400e; }
+  .badge-finished { background: #e7e5e4; color: #57534e; }
+  .live-clock { font-size: 0.8rem; color: #0d9488; margin-top: 3px; font-weight: 700; }
+  .venue-text { font-size: 0.68rem; color: #a8a29e; margin-top: 2px; }
   .highlights-link {
     display: inline-block; margin-top: 5px;
-    color: #fbbf24; font-size: 0.7rem; font-weight: 700;
+    color: #0d9488; font-size: 0.7rem; font-weight: 700;
     text-decoration: none; letter-spacing: 0.03em;
   }
-  .highlights-link:hover { color: #ffd700; text-decoration: underline; }
+  .highlights-link:hover { color: #0f766e; text-decoration: underline; }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-  .no-matches { padding: 48px; text-align: center; color: #6b7280; font-size: 1rem; }
+  .no-matches { padding: 48px; text-align: center; color: #78716c; font-size: 1rem; }
 
   /* Standings */
   #standingsView { display: none; padding: 16px 16px 40px; max-width: 1200px; margin: 0 auto; }
   .standings-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .group-card { background: #111827; border-radius: 10px; border: 1px solid #1f2937; overflow: hidden; }
+  .group-card { background: #fff; border-radius: 10px; border: 1px solid #e7e5e4; overflow: hidden; }
   .group-card-header {
-    background: linear-gradient(90deg, #1e3a5f, #1f2937);
+    background: #1c1917;
     padding: 10px 14px; font-size: 0.85rem; font-weight: 700;
-    color: #ffd700; text-transform: uppercase; letter-spacing: 0.06em;
-    border-bottom: 1px solid #1f2937;
+    color: #0d9488; text-transform: uppercase; letter-spacing: 0.06em;
+    border-bottom: 1px solid #e7e5e4;
   }
   .standings-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
   .standings-table thead th {
-    padding: 6px 6px; text-align: center; color: #6b7280;
+    padding: 6px 6px; text-align: center; color: #78716c;
     font-weight: 600; font-size: 0.7rem; text-transform: uppercase;
-    border-bottom: 1px solid #1f2937; background: #0f172a;
+    border-bottom: 1px solid #e7e5e4; background: #f5f5f4;
   }
   .standings-table thead th.th-team { text-align: left; padding-left: 10px; }
-  .standings-table tbody tr { border-bottom: 1px solid #1a2030; transition: background 0.15s; }
+  .standings-table tbody tr { border-bottom: 1px solid #f5f5f4; transition: background 0.15s; }
   .standings-table tbody tr:last-child { border-bottom: none; }
-  .standings-table tbody tr:hover { background: #1a2235; }
-  .standings-table td { padding: 7px 6px; text-align: center; color: #d1d5db; }
-  .standings-table td.td-rank { width: 24px; font-size: 0.72rem; color: #6b7280; font-weight: 600; padding-left: 8px; }
+  .standings-table tbody tr:hover { background: #fef3c7; }
+  .standings-table td { padding: 7px 6px; text-align: center; color: #1c1917; }
+  .standings-table td.td-rank { width: 24px; font-size: 0.72rem; color: #78716c; font-weight: 600; padding-left: 8px; }
   .standings-table td.td-team { text-align: left; padding-left: 6px; }
-  .standings-table td.td-pts { font-weight: 800; color: #fff; }
-  .standings-table td.td-gd { color: #93c5fd; }
+  .standings-table td.td-pts { font-weight: 800; color: #0c0a09; }
+  .standings-table td.td-gd { color: #0d9488; }
   .s-team-cell { display: flex; align-items: center; gap: 7px; }
   .s-flag { width: 22px; height: 16px; object-fit: cover; border-radius: 2px; flex-shrink: 0; }
-  .s-flag-placeholder { width: 22px; height: 16px; background: #374151; border-radius: 2px; flex-shrink: 0; }
-  .s-name { font-size: 0.82rem; font-weight: 600; color: #e5e7eb; white-space: nowrap; }
-  .s-abbr { font-size: 0.72rem; color: #9ca3af; display: none; }
-  .qualifies-row { border-left: 3px solid #22c55e !important; }
-  .qualifies-row td.td-rank { color: #22c55e; }
-  .standings-legend { margin-top: 12px; display: flex; align-items: center; gap: 8px;
-    font-size: 0.75rem; color: #6b7280; padding: 0 4px; }
-  .legend-dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+  .s-flag-placeholder { width: 22px; height: 16px; background: #d6d3d1; border-radius: 2px; flex-shrink: 0; }
+  .s-name { font-size: 0.82rem; font-weight: 600; color: #1c1917; white-space: nowrap; }
+  .s-abbr { font-size: 0.72rem; color: #78716c; display: none; }
+  .qualifies-row { border-left: 3px solid #16a34a !important; background: rgba(22, 163, 74, 0.05); }
+  .qualifies-row td.td-rank { color: #16a34a; font-weight: 800; }
+  .qualifies-row .s-name { color: #14532d; }
+  .qualifier-end-row { border-bottom: 2px solid rgba(22, 163, 74, 0.25) !important; }
+  .maybe-row { border-left: 3px solid #d97706 !important; background: rgba(217, 119, 6, 0.05); }
+  .maybe-row td.td-rank { color: #d97706; font-weight: 800; }
+  .eliminated-row { border-left: 3px solid #dc2626 !important; background: rgba(220, 38, 38, 0.03); }
+  .eliminated-row td { color: #a8a29e !important; }
+  .eliminated-row td.td-pts { color: #78716c !important; font-weight: 600; }
+  .eliminated-row .s-name { color: #a8a29e !important; }
+  .standings-legend { margin-top: 12px; display: flex; align-items: center; gap: 14px;
+    font-size: 0.75rem; color: #78716c; padding: 0 4px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-bar { width: 3px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+  .legend-bar-green { background: #16a34a; }
+  .legend-bar-amber { background: #d97706; }
+  .legend-bar-red { background: #dc2626; }
 
   /* Squads */
   #squadsView { display: none; padding: 16px 16px 40px; max-width: 1200px; margin: 0 auto; }
 
   .squads-back {
     display: none; margin-bottom: 16px;
-    background: #1f2937; color: #9ca3af; border: 1px solid #374151;
+    background: #f5f5f4; color: #57534e; border: 1px solid #d6d3d1;
     padding: 7px 16px; border-radius: 20px; cursor: pointer; font-size: 0.85rem;
   }
-  .squads-back:hover { background: #374151; color: #e5e7eb; }
+  .squads-back:hover { background: #e7e5e4; color: #1c1917; }
   .squads-back.visible { display: inline-block; }
 
   .teams-group-section { margin-bottom: 24px; }
   .teams-group-label {
-    font-size: 0.75rem; font-weight: 700; color: #6b7280;
+    font-size: 0.75rem; font-weight: 700; color: #78716c;
     text-transform: uppercase; letter-spacing: 0.06em;
     margin-bottom: 8px; padding-left: 2px;
   }
   .teams-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 4px; }
   .team-tile {
-    background: #111827; border: 1px solid #1f2937; border-radius: 8px;
+    background: #fff; border: 1px solid #e7e5e4; border-radius: 8px;
     padding: 10px 6px; text-align: center; cursor: pointer;
     transition: border-color 0.15s, background 0.15s;
     display: flex; flex-direction: column; align-items: center; gap: 6px;
   }
-  .team-tile:hover { border-color: #3b82f6; background: #1a2235; }
-  .team-tile.selected { border-color: #ffd700; background: #1c1a0a; }
+  .team-tile:hover { border-color: #0d9488; background: #f0fdfa; }
+  .team-tile.selected { border-color: #0d9488; background: #ccfbf1; }
   .team-tile-flag { width: 36px; height: 26px; object-fit: cover; border-radius: 3px; }
-  .team-tile-flag-ph { width: 36px; height: 26px; background: #374151; border-radius: 3px; }
-  .team-tile-name { font-size: 0.72rem; color: #d1d5db; font-weight: 600; line-height: 1.2; }
+  .team-tile-flag-ph { width: 36px; height: 26px; background: #d6d3d1; border-radius: 3px; }
+  .team-tile-name { font-size: 0.72rem; color: #1c1917; font-weight: 600; line-height: 1.2; }
 
   .squad-panel { display: none; }
   .squad-panel.visible { display: block; }
   .squad-team-header {
     display: flex; align-items: center; gap: 14px;
     padding: 16px 0 20px;
-    border-bottom: 2px solid #1f2937; margin-bottom: 24px;
+    border-bottom: 2px solid #e7e5e4; margin-bottom: 24px;
   }
   .squad-team-flag { width: 52px; height: 36px; object-fit: cover; border-radius: 4px; }
-  .squad-team-name { font-size: 1.3rem; font-weight: 700; color: #fff; }
-  .squad-team-group { font-size: 0.8rem; color: #60a5fa; margin-top: 3px; }
+  .squad-team-name { font-size: 1.3rem; font-weight: 700; color: #1c1917; }
+  .squad-team-group { font-size: 0.8rem; color: #0d9488; margin-top: 3px; }
 
   .position-section { margin-bottom: 28px; }
   .position-header {
-    font-size: 0.8rem; font-weight: 700; color: #6b7280;
+    font-size: 0.8rem; font-weight: 700; color: #78716c;
     text-transform: uppercase; letter-spacing: 0.06em;
-    border-left: 3px solid #374151; padding-left: 8px; margin-bottom: 12px;
+    border-left: 3px solid #d6d3d1; padding-left: 8px; margin-bottom: 12px;
   }
   .players-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
 
   .player-card {
-    background: #111827; border: 1px solid #1f2937; border-radius: 8px;
+    background: #fff; border: 1px solid #e7e5e4; border-radius: 8px;
     overflow: hidden; text-align: center; transition: border-color 0.15s;
   }
-  .player-card:hover { border-color: #374151; }
+  .player-card:hover { border-color: #d6d3d1; }
   .player-photo-wrap {
-    background: #1a2235; height: 76px;
+    background: #f5f5f4; height: 76px;
     display: flex; align-items: flex-end; justify-content: center; overflow: hidden;
   }
   .player-photo { width: 66px; height: 76px; object-fit: cover; object-position: top; display: block; }
   .player-photo-wrap.no-photo {
     align-items: center;
-    background: #1a2235;
+    background: #f5f5f4;
   }
   .player-silhouette {
-    width: 40px; height: 56px; opacity: 0.2;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E") no-repeat center/contain;
+    width: 40px; height: 56px; opacity: 0.15;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231c1917'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E") no-repeat center/contain;
   }
   .player-info { padding: 6px 4px 8px; }
-  .player-jersey { font-size: 0.65rem; color: #6b7280; font-weight: 700; margin-bottom: 2px; }
-  .player-name { font-size: 0.75rem; font-weight: 700; color: #e5e7eb; line-height: 1.2; margin-bottom: 2px; }
-  .player-age { font-size: 0.65rem; color: #6b7280; }
+  .player-jersey { font-size: 0.65rem; color: #78716c; font-weight: 700; margin-bottom: 2px; }
+  .player-name { font-size: 0.75rem; font-weight: 700; color: #1c1917; line-height: 1.2; margin-bottom: 2px; }
+  .player-age { font-size: 0.65rem; color: #a8a29e; }
 
-  .squad-loading { text-align: center; padding: 48px; color: #6b7280; font-size: 0.9rem; }
-  .squad-error { text-align: center; padding: 48px; color: #ef4444; font-size: 0.9rem; }
+  .squad-loading { text-align: center; padding: 48px; color: #78716c; font-size: 0.9rem; }
+  .squad-error { text-align: center; padding: 48px; color: #dc2626; font-size: 0.9rem; }
 
   /* Lightbox */
   .lightbox-overlay {
     display: none; position: fixed; inset: 0; z-index: 1000;
-    background: rgba(0,0,0,0.85); align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.6); align-items: center; justify-content: center;
   }
   .lightbox-overlay.open { display: flex; }
   .lightbox-box {
-    background: #111827; border-radius: 12px; overflow: hidden;
+    background: #fff; border-radius: 12px; overflow: hidden;
     max-width: 300px; width: 88%; position: relative;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
     animation: lbIn 0.15s ease-out;
   }
   @keyframes lbIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   .lightbox-img { width: 100%; display: block; object-fit: cover; object-position: top; max-height: 340px; }
-  .lightbox-caption { padding: 12px 16px 14px; border-top: 1px solid #1f2937; }
-  .lightbox-caption-name { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 3px; }
-  .lightbox-caption-meta { font-size: 0.8rem; color: #9ca3af; }
+  .lightbox-caption { padding: 12px 16px 14px; border-top: 1px solid #e7e5e4; }
+  .lightbox-caption-name { font-size: 1rem; font-weight: 700; color: #1c1917; margin-bottom: 3px; }
+  .lightbox-caption-meta { font-size: 0.8rem; color: #78716c; }
   .lightbox-close {
     position: absolute; top: 8px; right: 8px;
-    background: rgba(0,0,0,0.65); color: #fff; border: none;
+    background: rgba(0,0,0,0.45); color: #fff; border: none;
     border-radius: 50%; width: 28px; height: 28px; font-size: 1.1rem;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
   }
-  .lightbox-close:hover { background: rgba(0,0,0,0.9); }
+  .lightbox-close:hover { background: rgba(0,0,0,0.7); }
   .player-photo { cursor: pointer; }
+
+  /* Theme toggle button */
+  .theme-btn {
+    background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 20px; padding: 6px 12px; font-size: 1rem; cursor: pointer;
+    transition: background 0.2s; line-height: 1;
+  }
+  .theme-btn:hover { background: rgba(255,255,255,0.22); }
+
+  /* ── Dark theme overrides (body.dark) ── */
+  body.dark { background: #0a0e1a; color: #e8eaf6; }
+  body.dark .header { background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #1565c0 100%); border-bottom-color: #ffd700; }
+  body.dark .header-title .year { color: #ffd700; }
+  body.dark .meta { color: #90caf9; }
+  body.dark .meta strong { color: #fff; }
+  body.dark .refresh-btn { background: #ffd700; color: #000; }
+  body.dark .refresh-btn:hover { background: #ffec6e; }
+  body.dark .filter-bar { background: #111827; border-bottom-color: #1f2937; }
+  body.dark .filter-btn { background: #1f2937; color: #9ca3af; border-color: #374151; }
+  body.dark .filter-btn:hover { background: #374151; color: #e5e7eb; }
+  body.dark .filter-btn.active { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+  body.dark .filter-btn.live-btn.active { background: #dc2626; border-color: #dc2626; }
+  body.dark .filter-btn.standings-btn.active { background: #7c3aed; border-color: #7c3aed; }
+  body.dark .filter-btn.squads-btn.active { background: #0f766e; border-color: #0f766e; }
+  body.dark .filter-divider { background: #374151; }
+  body.dark .search-input { background: #1f2937; color: #e5e7eb; border-color: #374151; }
+  body.dark .search-input:focus { border-color: #3b82f6; }
+  body.dark .search-input::placeholder { color: #6b7280; }
+  body.dark .search-icon { color: #6b7280; }
+  body.dark .day-header { background: #111827; border-left-color: #ffd700; color: #ffd700; }
+  body.dark .match-card { background: #111827; border-color: #1f2937; }
+  body.dark .match-card:hover { border-color: #374151; background: #111827; }
+  body.dark .match-card.live { border-color: #fbbf24; background: #1c1a0a; }
+  body.dark .match-time .time { color: #fff; }
+  body.dark .match-time .trt-label { color: #6b7280; }
+  body.dark .match-time .group-tag { color: #60a5fa; background: #1e3a5f; }
+  body.dark .team-name { color: #e5e7eb; }
+  body.dark .team-abbr { color: #9ca3af; }
+  body.dark .team-flag-placeholder { background: #374151; }
+  body.dark .winner .team-name { color: #fff; font-weight: 800; }
+  body.dark .score-display { color: #fff; background: #1f2937; }
+  body.dark .score-display.pending { color: #4b5563; }
+  body.dark .live .score-display { background: #78350f; color: #fbbf24; }
+  body.dark .pen-score { color: #fbbf24; }
+  body.dark .badge-scheduled { background: #1f2937; color: #6b7280; }
+  body.dark .badge-halftime { background: #92400e; color: #fcd34d; }
+  body.dark .badge-finished { background: #14532d; color: #86efac; }
+  body.dark .live-clock { color: #fbbf24; }
+  body.dark .venue-text { color: #4b5563; }
+  body.dark .highlights-link { color: #fbbf24; }
+  body.dark .highlights-link:hover { color: #ffd700; }
+  body.dark .no-matches { color: #6b7280; }
+  body.dark .group-card { background: #111827; border-color: #1f2937; }
+  body.dark .group-card-header { background: linear-gradient(90deg, #1e3a5f, #1f2937); color: #ffd700; border-bottom-color: #1f2937; }
+  body.dark .standings-table thead th { color: #6b7280; border-bottom-color: #1f2937; background: #0f172a; }
+  body.dark .standings-table tbody tr { border-bottom-color: #1a2030; }
+  body.dark .standings-table tbody tr:hover { background: #1a2235; }
+  body.dark .standings-table td { color: #d1d5db; }
+  body.dark .standings-table td.td-rank { color: #6b7280; }
+  body.dark .standings-table td.td-pts { color: #fff; }
+  body.dark .standings-table td.td-gd { color: #93c5fd; }
+  body.dark .s-flag-placeholder { background: #374151; }
+  body.dark .s-name { color: #e5e7eb; }
+  body.dark .s-abbr { color: #9ca3af; }
+  body.dark .qualifies-row { border-left-color: #22c55e !important; background: rgba(34,197,94,0.07); }
+  body.dark .qualifies-row td.td-rank { color: #22c55e; }
+  body.dark .qualifies-row .s-name { color: #f0fdf4; }
+  body.dark .eliminated-row td { color: #6b7280 !important; }
+  body.dark .eliminated-row td.td-pts { color: #9ca3af !important; }
+  body.dark .eliminated-row .s-name { color: #9ca3af !important; }
+  body.dark .standings-legend { color: #6b7280; }
+  body.dark .squads-back { background: #1f2937; color: #9ca3af; border-color: #374151; }
+  body.dark .squads-back:hover { background: #374151; color: #e5e7eb; }
+  body.dark .teams-group-label { color: #6b7280; }
+  body.dark .team-tile { background: #111827; border-color: #1f2937; }
+  body.dark .team-tile:hover { border-color: #3b82f6; background: #1a2235; }
+  body.dark .team-tile.selected { border-color: #ffd700; background: #1c1a0a; }
+  body.dark .team-tile-flag-ph { background: #374151; }
+  body.dark .team-tile-name { color: #d1d5db; }
+  body.dark .squad-team-header { border-bottom-color: #1f2937; }
+  body.dark .squad-team-name { color: #fff; }
+  body.dark .squad-team-group { color: #60a5fa; }
+  body.dark .position-header { color: #6b7280; border-left-color: #374151; }
+  body.dark .player-card { background: #111827; border-color: #1f2937; }
+  body.dark .player-card:hover { border-color: #374151; }
+  body.dark .player-photo-wrap { background: #1a2235; }
+  body.dark .player-photo-wrap.no-photo { background: #1a2235; }
+  body.dark .player-jersey { color: #6b7280; }
+  body.dark .player-name { color: #e5e7eb; }
+  body.dark .player-age { color: #6b7280; }
+  body.dark .squad-loading { color: #6b7280; }
+  body.dark .lightbox-box { background: #111827; box-shadow: 0 20px 60px rgba(0,0,0,0.8); }
+  body.dark .lightbox-caption { border-top-color: #1f2937; }
+  body.dark .lightbox-caption-name { color: #fff; }
+  body.dark .lightbox-caption-meta { color: #9ca3af; }
 
   /* Responsive */
   @media (max-width: 1024px) {
@@ -606,7 +734,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div class="meta">Son güncelleme: <strong>__UPDATED__</strong></div>
     </div>
   </div>
-  <button class="refresh-btn" onclick="location.reload()">&#8635; Yenile</button>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Tema değiştir">&#9790;</button>
+    <button class="refresh-btn" onclick="location.reload()">&#8635; Yenile</button>
+  </div>
 </div>
 
 <div class="filter-bar">
@@ -637,8 +768,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <div id="standingsView">
   <div class="standings-grid" id="standingsGrid"></div>
   <div class="standings-legend">
-    <span class="legend-dot"></span>
-    <span>Son 32'ye yükselir</span>
+    <span class="legend-item"><span class="legend-bar legend-bar-green"></span><span>Son 32'ye yükseldi</span></span>
+    <span class="legend-item"><span class="legend-bar legend-bar-red"></span><span>Turnuvadan elendi</span></span>
   </div>
 </div>
 
@@ -724,13 +855,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
     let html = '';
     groups.forEach(function(group) {
+      let lastQIdx = -1;
+      group.entries.forEach(function(e, i) { if (e.qualify_status === 'qualified') lastQIdx = i; });
       let rows = '';
-      group.entries.forEach(function(e) {
-        const qClass = e.qualifies ? ' qualifies-row' : '';
+      group.entries.forEach(function(e, i) {
+        let classes = '';
+        if (e.qualify_status === 'qualified') {
+          classes = 'qualifies-row' + (i === lastQIdx ? ' qualifier-end-row' : '');
+        } else if (e.qualify_status === 'eliminated') {
+          classes = 'eliminated-row';
+        }
         const flagHtml = e.logo
           ? '<img class="s-flag" src="' + escAttr(e.logo) + '" alt="' + escAttr(e.abbr) + '">'
           : '<div class="s-flag-placeholder"></div>';
-        rows += '<tr class="' + qClass + '">'
+        rows += '<tr class="' + classes + '">'
           + '<td class="td-rank">' + e.rank + '</td>'
           + '<td class="td-team"><div class="s-team-cell">' + flagHtml
           + '<span class="s-name">' + escAttr(e.team) + '</span>'
@@ -939,6 +1077,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     document.getElementById('squadContent').innerHTML = html || '<div class="squad-loading">Oyuncu bulunamadı.</div>';
   }
+
+  // Theme toggle
+  function toggleTheme() {
+    var isDark = document.body.classList.toggle('dark');
+    localStorage.setItem('wc_theme', isDark ? 'dark' : 'light');
+    document.getElementById('themeBtn').textContent = isDark ? '☀' : '☾';
+  }
+  (function() {
+    if (localStorage.getItem('wc_theme') === 'dark') {
+      document.body.classList.add('dark');
+      document.getElementById('themeBtn').textContent = '☀';
+    }
+  })();
 </script>
 </body>
 </html>
@@ -984,9 +1135,18 @@ def _team_html(m: dict, side: str) -> str:
         else '<div class="team-flag-placeholder"></div>'
     )
     winner_class = " winner" if is_winner and m["state"] == "post" else ""
+
+    arrow_html = ""
+    if not m["group"].startswith("Group ") and m["state"] == "post":
+        if is_winner:
+            arrow_html = '<span class="qual-arrow up">&#9650;</span>'
+        else:
+            arrow_html = '<span class="qual-arrow down">&#9660;</span>'
+
     if side == "home":
         return (
             f'<div class="team home{winner_class}">'
+            f'{arrow_html}'
             f'<span class="team-name">{name}</span>'
             f'<span class="team-abbr">{abbr}</span>'
             f'{flag_html}</div>'
@@ -996,6 +1156,7 @@ def _team_html(m: dict, side: str) -> str:
         f'{flag_html}'
         f'<span class="team-name">{name}</span>'
         f'<span class="team-abbr">{abbr}</span>'
+        f'{arrow_html}'
         f'</div>'
     )
 
@@ -1006,15 +1167,27 @@ def _build_standings_html(groups: list[dict]) -> str:
 
     cards = []
     for group in groups:
+        entries = group["entries"]
+        last_q_idx = max((i for i, e in enumerate(entries) if e["qualify_status"] == "qualified"), default=-1)
+
         rows = []
-        for e in group["entries"]:
-            qualify_class = " qualifies-row" if e["qualifies"] else ""
+        for i, e in enumerate(entries):
+            qs = e["qualify_status"]
+            classes = []
+            if qs == "qualified":
+                classes.append("qualifies-row")
+                if i == last_q_idx:
+                    classes.append("qualifier-end-row")
+            elif qs == "maybe":
+                classes.append("maybe-row")
+            elif qs == "eliminated":
+                classes.append("eliminated-row")
             flag_html = (
                 f'<img class="s-flag" src="{e["logo"]}" alt="{e["abbr"]}">' if e["logo"]
                 else '<div class="s-flag-placeholder"></div>'
             )
             rows.append(
-                f'<tr class="{qualify_class}">'
+                f'<tr class="{" ".join(classes)}">'
                 f'<td class="td-rank">{e["rank"]}</td>'
                 f'<td class="td-team"><div class="s-team-cell">{flag_html}'
                 f'<span class="s-name">{e["team"]}</span>'
@@ -1143,7 +1316,9 @@ def api_scores():
 
 @app.route("/api/standings")
 def api_standings():
-    return jsonify(get_standings(get_matches()))
+    matches = get_matches()
+    groups = get_standings(matches)
+    return jsonify(_annotate_qualify_status(groups, matches))
 
 
 @app.route("/player-photo/<player_id>")
